@@ -1,0 +1,2 @@
+import{describe,expect,it}from'vitest';import{wsSelect}from'./repository.js';
+describe('workstation query compatibility',()=>{it('keeps the Group 1 list query independent of later Phase 21 tables',()=>{expect(wsSelect).toContain('computer_lab_workstations');expect(wsSelect).not.toContain('computer_lab_sessions');expect(wsSelect).not.toContain('computer_lab_equipment');expect(wsSelect).not.toContain('computer_lab_workstation_software')})});

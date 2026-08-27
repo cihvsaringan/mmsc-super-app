@@ -1,0 +1,5 @@
+import{createHash}from'node:crypto';import type{PoolClient}from'pg';
+export type SharedCredentialType='rfid'|'qr'|'barcode'|'nfc';
+export const normalizeCredentialValue=(value:string)=>value.replace(/[\r\n]+$/g,'').trim();
+export const credentialDigest=(value:string)=>createHash('sha256').update(normalizeCredentialValue(value),'utf8').digest('hex');
+export async function resolveActiveCredential(client:PoolClient,value:string,types:readonly SharedCredentialType[]){const normalized=normalizeCredentialValue(value);if(!normalized)return null;const result=await client.query(`SELECT id,subject_type "ownerType",COALESCE(student_id,employee_id) "ownerId",credential_type "credentialType",status,expires_at "expiresAt" FROM credentials WHERE value_digest=$1 AND credential_type=ANY($2::varchar[]) ORDER BY CASE WHEN status='active' AND (expires_at IS NULL OR expires_at>now()) THEN 0 ELSE 1 END,created_at DESC,id DESC LIMIT 1`,[credentialDigest(normalized),types]);const row=result.rows[0];if(!row)return null;return{...row,active:row.status==='active'&&(!row.expiresAt||new Date(row.expiresAt)>new Date())}}

@@ -1,0 +1,8 @@
+import express from'express';import request from'supertest';import{describe,expect,it}from'vitest';import{createApp}from'../app.js';import{errorHandler}from'../lib/errors.js';import{rateLimit}from'../middleware/security-hardening.js';import{password}from'./schemas.js';
+describe('Phase 26 security hardening',()=>{
+ it('rejects cross-site state-changing requests',async()=>{const response=await request(createApp()).post('/api/v1/auth/login').set('origin','https://attacker.test').set('sec-fetch-site','cross-site').send({email:'user@mmsc.test',password:'secret'});expect(response.status).toBe(403);expect(response.body.error.code).toBe('UNTRUSTED_ORIGIN')});
+ it('adds no-store on API responses',async()=>{const response=await request(createApp()).get('/api/v1/health');expect(response.headers['cache-control']).toBe('no-store')});
+ it('replaces unsafe supplied request identifiers',async()=>{const response=await request(createApp()).get('/api/v1/health').set('x-request-id','bad id value');expect(response.headers['x-request-id']).not.toContain(' ')});
+ it('enforces strong new-password composition',()=>{expect(password.safeParse('longbutweakpassword').success).toBe(false);expect(password.safeParse('StrongPass!2026').success).toBe(true)});
+ it('throttles repeated requests with retry guidance',async()=>{const app=express();app.use(rateLimit({name:`test-${crypto.randomUUID()}`,maximum:2,windowMs:60_000}));app.get('/',(_req,res)=>res.sendStatus(204));app.use(errorHandler);expect((await request(app).get('/')).status).toBe(204);expect((await request(app).get('/')).status).toBe(204);const denied=await request(app).get('/');expect(denied.status).toBe(429);expect(denied.headers['retry-after']).toBeTruthy()});
+});

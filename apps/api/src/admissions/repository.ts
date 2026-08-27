@@ -1,0 +1,81 @@
+import type { PoolClient } from 'pg';
+import { pool } from '../database/pool.js';
+import { AppError } from '../lib/errors.js';
+import { securityRepository } from '../security/repository.js';
+
+const camel = (value: string) => value.replace(/_([a-z])/g, (_, letter: string) => letter.toUpperCase());
+const map = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(row).map(([key, value]) => [camel(key), value]));
+type Context = { actorId: string; requestId: string; ip?: string | undefined };
+type ApplicationData = Record<string, unknown> & { guardian: Record<string, unknown> };
+const applicationFields: Record<string,string> = { schoolId:'school_id',applicationType:'application_type',existingStudentId:'existing_student_id',schoolYearId:'school_year_id',gradeLevelId:'grade_level_id',sectionId:'section_id',firstName:'first_name',middleName:'middle_name',lastName:'last_name',suffix:'suffix',preferredName:'preferred_name',birthDate:'birth_date',gender:'gender',learnerReferenceNumber:'learner_reference_number',personalEmail:'personal_email',mobilePhone:'mobile_phone',addressLine1:'address_line1',barangay:'barangay',city:'city',province:'province',postalCode:'postal_code',previousSchoolId:'previous_school_id',previousSchool:'previous_school',applicantNotes:'applicant_notes'};
+const guardianFields: Record<string,string> = { firstName:'first_name',middleName:'middle_name',lastName:'last_name',suffix:'suffix',relationshipType:'relationship_type',email:'email',mobilePhone:'mobile_phone',occupation:'occupation',employer:'employer',isPrimary:'is_primary',receivesCommunications:'receives_communications'};
+const audit = (client: PoolClient, context: Context, action: string, id: string, metadata?: Record<string,unknown>) => securityRepository.audit({ actorUserId:context.actorId,action,targetType:'admission_application',targetId:id,outcome:'success',requestId:context.requestId,ipAddress:context.ip,metadata },client);
+
+export class AdmissionsRepository {
+  async context() {
+    const [schools, years, grades, sections, students, externalSchools] = await Promise.all([
+      pool.query(`SELECT id,code,name FROM schools WHERE archived_at IS NULL AND active AND is_primary ORDER BY name`),
+      pool.query(`SELECT id,name,school_id,status FROM school_years WHERE archived_at IS NULL ORDER BY starts_on DESC`),
+      pool.query(`SELECT id,name,school_id,sequence FROM grade_levels WHERE archived_at IS NULL AND active ORDER BY sequence,name,id`),
+      pool.query(`SELECT id,name,school_year_id,grade_level_id FROM sections WHERE archived_at IS NULL AND active ORDER BY name`),
+      pool.query(`SELECT id,student_number,first_name,last_name,birth_date,school_id FROM students WHERE archived_at IS NULL ORDER BY lower(last_name),lower(first_name)`),
+      pool.query(`SELECT id,name FROM external_schools WHERE archived_at IS NULL AND active ORDER BY lower(name)`),
+    ]);
+    return { schools:schools.rows.map(map),schoolYears:years.rows.map(map),gradeLevels:grades.rows.map(map),sections:sections.rows.map(map),students:students.rows.map(map),externalSchools:externalSchools.rows.map(map) };
+  }
+
+  async list(query: { search?: string; status?: string; applicationType?:string;gradeLevelId?:string;schoolYearId?:string;sort:'priority'|'submitted_desc'|'submitted_asc'|'applicant_asc';limit: number; offset: number }) {
+    const values: unknown[]=[]; const where=[`a.archived_at IS NULL`];
+    if(query.search){values.push(`%${query.search}%`);where.push(`(a.application_number ILIKE $${values.length} OR concat_ws(' ',a.first_name,a.middle_name,a.last_name) ILIKE $${values.length} OR s.student_number ILIKE $${values.length} OR concat_ws(' ',pg.first_name,pg.middle_name,pg.last_name,pg.mobile_phone,pg.email) ILIKE $${values.length})`);}
+    if(query.status==='pending')where.push(`a.status IN('submitted','under_review','information_requested')`);else if(query.status){values.push(query.status);where.push(`a.status=$${values.length}`);}
+    if(query.applicationType){values.push(query.applicationType);where.push(`a.application_type=$${values.length}`);}
+    if(query.gradeLevelId){values.push(query.gradeLevelId);where.push(`a.grade_level_id=$${values.length}`);}
+    if(query.schoolYearId){values.push(query.schoolYearId);where.push(`a.school_year_id=$${values.length}`);}
+    const joins=`LEFT JOIN students s ON s.id=a.existing_student_id LEFT JOIN LATERAL(SELECT first_name,middle_name,last_name,mobile_phone,email FROM admission_guardians WHERE application_id=a.id ORDER BY is_primary DESC,created_at LIMIT 1)pg ON true`;
+    const total=await pool.query(`SELECT count(*)::int total FROM admission_applications a ${joins} WHERE ${where.join(' AND ')}`,values);
+    values.push(query.limit,query.offset);
+    const order={priority:`CASE a.status WHEN 'submitted' THEN 1 WHEN 'under_review' THEN 2 WHEN 'information_requested' THEN 3 ELSE 4 END,a.submitted_at DESC NULLS LAST,a.updated_at DESC`,submitted_desc:`a.submitted_at DESC NULLS LAST,a.updated_at DESC`,submitted_asc:`a.submitted_at ASC NULLS LAST,a.updated_at ASC`,applicant_asc:`lower(a.last_name),lower(a.first_name)`}[query.sort];
+    const rows=await pool.query(`SELECT a.id,a.application_number,a.application_type,a.status,a.first_name,a.middle_name,a.last_name,a.birth_date,a.submitted_at,a.updated_at,a.version,s.student_number existing_student_number,sy.name school_year_name,gl.name grade_level_name,concat_ws(' ',pg.first_name,pg.middle_name,pg.last_name) primary_contact_name,pg.mobile_phone primary_contact_phone FROM admission_applications a JOIN school_years sy ON sy.id=a.school_year_id JOIN grade_levels gl ON gl.id=a.grade_level_id ${joins} WHERE ${where.join(' AND ')} ORDER BY ${order} LIMIT $${values.length-1} OFFSET $${values.length}`,values);
+    return {items:rows.rows.map(map),total:Number(total.rows[0]?.total??0)};
+  }
+
+  async detail(id:string){
+    const app=await pool.query(`SELECT a.*,sy.name school_year_name,gl.name grade_level_name,sec.name section_name,s.student_number existing_student_number FROM admission_applications a JOIN school_years sy ON sy.id=a.school_year_id JOIN grade_levels gl ON gl.id=a.grade_level_id LEFT JOIN sections sec ON sec.id=a.section_id LEFT JOIN students s ON s.id=a.existing_student_id WHERE a.id=$1 AND a.archived_at IS NULL`,[id]);
+    if(!app.rows[0])return null;
+    const [guardians,documents,history,duplicates]=await Promise.all([
+      pool.query(`SELECT * FROM admission_guardians WHERE application_id=$1 ORDER BY is_primary DESC,created_at`,[id]),
+      pool.query(`SELECT * FROM admission_documents WHERE application_id=$1 ORDER BY created_at`,[id]),
+      pool.query(`SELECT h.*,COALESCE(u.display_name,'Public applicant') actor_name FROM admission_status_history h LEFT JOIN users u ON u.id=h.actor_user_id WHERE h.application_id=$1 ORDER BY h.created_at DESC`,[id]),
+      pool.query(`SELECT id,student_number,first_name,middle_name,last_name,birth_date,enrollment_status FROM students WHERE archived_at IS NULL AND school_id=$1 AND ((lower(first_name)=lower($2) AND lower(last_name)=lower($3) AND birth_date=$4) OR ($5::varchar IS NOT NULL AND learner_reference_number=$5)) ORDER BY last_name`,[app.rows[0].school_id,app.rows[0].first_name,app.rows[0].last_name,app.rows[0].birth_date,app.rows[0].learner_reference_number]),
+    ]);
+    return {application:map(app.rows[0]),guardians:guardians.rows.map(map),documents:documents.rows.map(map),history:history.rows.map(map),duplicateCandidates:duplicates.rows.map(map)};
+  }
+
+  async create(data:ApplicationData,context:Context){
+    const client=await pool.connect();try{await client.query('BEGIN');const entries=Object.entries(data).filter(([key,value])=>key!=='guardian'&&value!==undefined);const result=await client.query(`INSERT INTO admission_applications(${entries.map(([key])=>applicationFields[key]).join(',')},created_by,updated_by) VALUES(${entries.map((_,index)=>`$${index+1}`).join(',')},$${entries.length+1},$${entries.length+1}) RETURNING *`,[...entries.map(([,value])=>value),context.actorId]);const row=result.rows[0] as Record<string,unknown>;const guardianEntries=Object.entries(data.guardian).filter(([,value])=>value!==undefined);await client.query(`INSERT INTO admission_guardians(application_id,${guardianEntries.map(([key])=>guardianFields[key]).join(',')}) VALUES($1,${guardianEntries.map((_,index)=>`$${index+2}`).join(',')})`,[row.id,...guardianEntries.map(([,value])=>value)]);await client.query(`INSERT INTO admission_status_history(application_id,to_status,actor_user_id) VALUES($1,'draft',$2)`,[row.id,context.actorId]);await audit(client,context,'admission.application.create',String(row.id));await client.query('COMMIT');return map(row);}catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+  }
+
+  async transition(id:string,data:{version:number;status:string;reason?:string|null|undefined;registrarNotes?:string|null|undefined},context:Context){
+    const allowed:Record<string,string[]>={draft:['submitted','withdrawn'],submitted:['under_review','information_requested','rejected'],under_review:['information_requested','approved','rejected'],information_requested:['submitted','rejected'],approved:['rejected']};
+    const client=await pool.connect();
+    try{
+      await client.query('BEGIN');
+      const current=await client.query(`SELECT status FROM admission_applications WHERE id=$1 AND version=$2 AND archived_at IS NULL FOR UPDATE`,[id,data.version]);
+      if(!current.rows[0])throw new AppError(409,'STALE_RECORD','The application changed or no longer exists');
+      const from=String(current.rows[0].status);
+      if(!allowed[from]?.includes(data.status))throw new AppError(409,'INVALID_ADMISSION_TRANSITION',`Cannot move an application from ${from} to ${data.status}`);
+      const result=await client.query(`UPDATE admission_applications SET status=$1::varchar,registrar_notes=COALESCE($2,registrar_notes),information_request=CASE WHEN $1::varchar='information_requested' THEN $3 ELSE information_request END,decision_reason=CASE WHEN $1::varchar IN('approved','rejected') THEN $3 ELSE decision_reason END,submitted_at=CASE WHEN $1::varchar='submitted' THEN now() ELSE submitted_at END,decided_at=CASE WHEN $1::varchar IN('approved','rejected') THEN now() ELSE decided_at END,updated_by=$4,updated_at=now(),version=version+1 WHERE id=$5 RETURNING *`,[data.status,data.registrarNotes??null,data.reason??null,context.actorId,id]);
+      await client.query(`INSERT INTO admission_status_history(application_id,from_status,to_status,reason,actor_user_id) VALUES($1,$2,$3,$4,$5)`,[id,from,data.status,data.reason??null,context.actorId]);
+      await audit(client,context,'admission.application.transition',id,{from,to:data.status});
+      await client.query('COMMIT');return map(result.rows[0]);
+    }catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+  }
+
+  async convert(id:string,version:number,context:Context){
+    const client=await pool.connect();try{await client.query('BEGIN');const result=await client.query(`SELECT * FROM admission_applications WHERE id=$1 AND version=$2 AND archived_at IS NULL FOR UPDATE`,[id,version]);const app=result.rows[0];if(!app)throw new AppError(409,'STALE_RECORD','The application changed or no longer exists');if(app.status!=='approved')throw new AppError(409,'APPLICATION_NOT_APPROVED','Only approved applications can be converted');let studentId=app.existing_student_id as string|null;
+      if(!studentId){const duplicate=await client.query(`SELECT id FROM students WHERE school_id=$1 AND archived_at IS NULL AND ((lower(first_name)=lower($2) AND lower(last_name)=lower($3) AND birth_date=$4) OR ($5::varchar IS NOT NULL AND learner_reference_number=$5)) LIMIT 1`,[app.school_id,app.first_name,app.last_name,app.birth_date,app.learner_reference_number]);if(duplicate.rows[0])throw new AppError(409,'POSSIBLE_DUPLICATE_STUDENT','Match the application to the existing Student before conversion');const student=await client.query(`INSERT INTO students(school_id,student_number,learner_reference_number,first_name,middle_name,last_name,suffix,preferred_name,birth_date,gender,personal_email,mobile_phone,address_line1,barangay,city,province,postal_code,enrollment_status,entry_date,previous_school,created_at,updated_at) VALUES($1,'MMSC-'||to_char(current_date,'YYYY')||'-'||lpad(nextval('admission_application_number_seq')::text,6,'0'),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,'prospective',current_date,$17,now(),now()) RETURNING id`,[app.school_id,app.learner_reference_number,app.first_name,app.middle_name,app.last_name,app.suffix,app.preferred_name,app.birth_date,app.gender,app.personal_email,app.mobile_phone,app.address_line1,app.barangay,app.city,app.province,app.postal_code,app.previous_school]);studentId=String(student.rows[0].id);}
+      const existingEnrollment=await client.query(`SELECT id FROM enrollments WHERE student_id=$1 AND school_year_id=$2`,[studentId,app.school_year_id]);if(existingEnrollment.rows[0])throw new AppError(409,'ENROLLMENT_ALREADY_EXISTS','The matched Student already has an enrollment for this school year');const enrollment=await client.query(`INSERT INTO enrollments(student_id,school_year_id,grade_level_id,section_id,status,enrollment_date,remarks) VALUES($1,$2,$3,$4,'pending',current_date,$5) RETURNING id`,[studentId,app.school_year_id,app.grade_level_id,app.section_id,`Created from admissions application ${app.application_number}`]);const guardians=await client.query(`SELECT * FROM admission_guardians WHERE application_id=$1`,[id]);for(const guardian of guardians.rows){let guardianId=(await client.query(`SELECT id FROM guardians WHERE school_id=$1 AND archived_at IS NULL AND ((mobile_phone=$2) OR ($3::varchar IS NOT NULL AND lower(email)=lower($3))) ORDER BY created_at LIMIT 1`,[app.school_id,guardian.mobile_phone,guardian.email])).rows[0]?.id;if(!guardianId){guardianId=(await client.query(`INSERT INTO guardians(school_id,first_name,middle_name,last_name,suffix,email,mobile_phone,occupation,employer) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,[app.school_id,guardian.first_name,guardian.middle_name,guardian.last_name,guardian.suffix,guardian.email,guardian.mobile_phone,guardian.occupation,guardian.employer])).rows[0].id;}await client.query(`INSERT INTO student_guardians(student_id,guardian_id,relationship_type,is_primary,receives_communications) VALUES($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`,[studentId,guardianId,guardian.relationship_type,guardian.is_primary,guardian.receives_communications]);}
+      await client.query(`UPDATE admission_applications SET status='converted',converted_student_id=$1,converted_enrollment_id=$2,converted_at=now(),updated_by=$3,updated_at=now(),version=version+1 WHERE id=$4`,[studentId,enrollment.rows[0].id,context.actorId,id]);await client.query(`INSERT INTO admission_status_history(application_id,from_status,to_status,reason,actor_user_id) VALUES($1,'approved','converted','Converted to authoritative SIS records',$2)`,[id,context.actorId]);await audit(client,context,'admission.application.convert',id,{studentId,enrollmentId:enrollment.rows[0].id});await client.query('COMMIT');return{studentId,enrollmentId:String(enrollment.rows[0].id)};}catch(error){await client.query('ROLLBACK');throw error;}finally{client.release();}
+  }
+}
+export const admissionsRepository=new AdmissionsRepository();

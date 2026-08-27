@@ -1,0 +1,18 @@
+{
+  "name": "mmsc-super-app",
+  "private": true,
+  "packageManager": "pnpm@10.14.0",
+  "scripts": {
+    "dev": "pnpm --parallel --filter './apps/*' dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "db:migrate": "pnpm --filter @mmsc/api db:migrate",
+    "db:seed": "pnpm --filter @mmsc/api db:seed",
+    "demo:reset": "pnpm --filter @mmsc/api db:demo:reset",
+    "demo:validate": "pnpm --filter @mmsc/api db:demo:validate",
+    "reset:test-rfid": "pnpm --filter @mmsc/api db:reset:test-rfid"
+  },
+  "engines": { "node": ">=22" }
+}

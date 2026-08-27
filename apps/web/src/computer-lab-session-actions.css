@@ -1,0 +1,6 @@
+.session-actions{display:flex;align-items:center;gap:.55rem;flex-wrap:wrap;min-width:250px}
+.session-actions .session-action{min-height:42px;padding:.65rem .85rem;white-space:nowrap}
+.session-actions .session-action svg{width:17px;height:17px}
+.session-actions .danger{border-color:#dc2626;color:#b91c1c;background:#fff}
+.session-actions .danger:hover:not(:disabled){background:#fef2f2}
+@media(max-width:760px){.session-actions{min-width:0;align-items:stretch;flex-direction:column}.session-actions .session-action{width:100%}}

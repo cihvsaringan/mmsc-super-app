@@ -1,0 +1,12 @@
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../auth/AuthContext',()=>({useAuth:()=>({has:()=>true})}));
+import { Admissions } from './Admissions';
+
+describe('Admissions workspace tabs',()=>{
+  afterEach(()=>cleanup());
+  const item={id:'application',applicationNumber:'MMREG-2026-100075',applicationType:'new_student',status:'submitted',firstName:'Ana',lastName:'Reyes',birthDate:'2018-01-02',schoolYearName:'SY 2026-2027',gradeLevelName:'Grade 1',submittedAt:'2026-08-23T09:00:00Z',updatedAt:'2026-08-23T09:00:00Z',version:1,primaryContactName:'Maria Reyes',primaryContactPhone:'0917'};
+  beforeEach(()=>vi.stubGlobal('fetch',vi.fn().mockImplementation(async(input:unknown)=>{const url=String(input);const body=url.includes('/admissions/context')?{schools:[],schoolYears:[],gradeLevels:[],sections:[],students:[],externalSchools:[]}:url.endsWith('/admissions/application')?{item:{application:item,guardians:[{id:'guardian',firstName:'Maria',lastName:'Reyes',relationshipType:'mother',mobilePhone:'0917',isPrimary:true,receivesCommunications:true}],documents:[],history:[{id:'history',toStatus:'submitted',actorName:'Public applicant',createdAt:'2026-08-23T09:00:00Z'}],duplicateCandidates:[]}}:{items:[item],total:1};return{ok:true,status:200,json:async()=>body};})));
+  it('uses a queue grid and opens complete details in a modal without a persistent review pane',async()=>{render(<Admissions/>);expect(await screen.findByRole('tab',{name:/application queue/i})).toHaveAttribute('aria-selected','true');expect(await screen.findByRole('table')).toBeInTheDocument();expect(screen.queryByText('Workflow history')).not.toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:/view ana reyes/i}));expect(await screen.findByRole('dialog')).toBeInTheDocument();expect(screen.getByText('Workflow history')).toBeInTheDocument();expect(screen.getByText('Parent and guardian information')).toBeInTheDocument();});
+  it('separates the queue from staff-assisted applicant selection',async()=>{render(<Admissions/>);expect(await screen.findByRole('tab',{name:/application queue/i})).toHaveAttribute('aria-selected','true');fireEvent.click(screen.getByRole('tab',{name:/staff-assisted/i}));expect(screen.getByRole('heading',{name:/start a staff-assisted application/i})).toBeInTheDocument();expect(screen.queryByRole('table')).not.toBeInTheDocument()});
+});

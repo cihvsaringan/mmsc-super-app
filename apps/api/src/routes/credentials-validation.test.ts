@@ -1,0 +1,7 @@
+import express from 'express';import request from 'supertest';import{describe,expect,it}from'vitest';import{errorHandler}from'../lib/errors.js';import{requestContext}from'../middleware/request-context.js';import{credentialsRouter}from'./credentials.js';
+const id='08f35c64-1fd8-4c59-abd9-03466935c97b';
+function app(permissions:string[]){const value=express();value.use(express.json());value.use(requestContext);value.use((req,_res,next)=>{req.auth={userId:id,authenticated:true,sessionId:'test',email:'admin@mmsc.test',displayName:'Admin',roles:['school_administrator'],permissions};next();});value.use('/api/v1',credentialsRouter);value.use(errorHandler);return value;}
+describe('credential request validation',()=>{
+ it('rejects unsupported credential types without reaching persistence',async()=>{const response=await request(app(['credential.manage'])).post('/api/v1/credentials').send({ownerType:'student',ownerId:id,credentialType:'student_rfid',credentialValue:'1234'});expect(response.status).toBe(400);expect(response.body.error.code).toBe('VALIDATION_ERROR');});
+ it('requires credential management permission for reads and writes',async()=>{expect((await request(app([])).get(`/api/v1/credentials?ownerType=student&ownerId=${id}`)).status).toBe(403);expect((await request(app([])).post('/api/v1/credentials').send({ownerType:'student',ownerId:id,credentialType:'rfid',credentialValue:'1234'})).status).toBe(403);});
+});

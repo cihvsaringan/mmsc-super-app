@@ -1,0 +1,8 @@
+CREATE TABLE library_visits(
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),patron_type varchar(20) NOT NULL CHECK(patron_type IN('student','employee')),student_id uuid REFERENCES students(id),employee_id uuid REFERENCES employees(id),patron_category varchar(20) NOT NULL CHECK(patron_category IN('student','teacher','employee')),grade_level_snapshot varchar(120),section_snapshot varchar(120),entry_at timestamptz NOT NULL DEFAULT now(),exit_at timestamptz,entry_operator_id uuid NOT NULL REFERENCES users(id),exit_operator_id uuid REFERENCES users(id),entry_method varchar(20) NOT NULL CHECK(entry_method IN('barcode','rfid','qr','manual')),exit_method varchar(20) CHECK(exit_method IS NULL OR exit_method IN('barcode','rfid','qr','manual')),entry_station varchar(120),exit_station varchar(120),created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now(),version integer NOT NULL DEFAULT 1 CHECK(version>0),CHECK((patron_type='student' AND student_id IS NOT NULL AND employee_id IS NULL)OR(patron_type='employee' AND employee_id IS NOT NULL AND student_id IS NULL)),CHECK(exit_at IS NULL OR exit_at>=entry_at)
+);
+CREATE UNIQUE INDEX library_visits_open_student ON library_visits(student_id) WHERE exit_at IS NULL AND student_id IS NOT NULL;
+CREATE UNIQUE INDEX library_visits_open_employee ON library_visits(employee_id) WHERE exit_at IS NULL AND employee_id IS NOT NULL;
+CREATE INDEX library_visits_entry_time ON library_visits(entry_at DESC);
+CREATE INDEX library_visits_open_entry ON library_visits(entry_at DESC) WHERE exit_at IS NULL;
+CREATE INDEX library_visits_reporting ON library_visits(patron_category,entry_at DESC,grade_level_snapshot,section_snapshot);

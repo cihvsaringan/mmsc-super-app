@@ -1,0 +1,14 @@
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+vi.mock('../auth/AuthContext',()=>({useAuth:()=>({has:()=>true})}));
+import { ClinicConsultation } from './ClinicConsultation';
+
+const encounter={id:'enc-1',encounterNumber:12,studentId:'student-1',studentNumber:'STU-001',firstName:'Ana',lastName:'Santos',profilePhotoUrl:null,gradeLevel:'Grade 7',section:'Faith',timeIn:'2026-08-27T08:00:00Z',timeOut:null,source:'injury',chiefComplaint:'Minor cut',symptoms:[],temperatureC:null,bloodPressure:null,pulse:null,respiratoryRate:null,oxygenSaturation:null,weightKg:null,assessment:null,diagnosis:null,treatment:null,observationNotes:null,clinicalNotes:null,disposition:null,queueStatus:'waiting',followUpRequired:false,parentContactRequired:false,clinicStaff:'Nurse Joy'};
+const detail={encounter,alerts:[{id:'a',severity:'critical',title:'Peanut allergy',notes:null}],guardians:[{id:'g',firstName:'Maria',lastName:'Santos',mobilePhone:'0917',relationshipType:'mother',isPrimary:true}],interventions:[],medications:[],guardianContacts:[],followUps:[]};
+const json=(body:unknown)=>Promise.resolve(new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}}));
+const renderPage=(entry:string)=>render(<MemoryRouter initialEntries={[entry]}><Routes><Route path="/clinic/visits" element={<ClinicConsultation/>}/><Route path="/clinic/queue" element={<div>Queue destination</div>}/></Routes></MemoryRouter>);
+describe('Clinic consultation workflow',()=>{beforeEach(()=>vi.stubGlobal('fetch',vi.fn().mockImplementation((input:unknown,init?:RequestInit)=>{const url=String(input);if(url.includes('/encounters/enc-1')&&!init?.method)return json(detail);if(url.includes('/encounters/log'))return json({items:[{...encounter,clinicStaff:'Nurse Joy'}],total:1,page:1,pageSize:25});return json({ok:true})})));afterEach(()=>{cleanup();vi.unstubAllGlobals()});
+ it('opens an encounter with alerts and structured consultation sections',async()=>{renderPage('/clinic/visits?encounter=enc-1');expect(await screen.findByText('Ana Santos')).toBeInTheDocument();expect(screen.getByText('Peanut allergy')).toBeInTheDocument();expect(screen.getByRole('navigation',{name:'Consultation sections'})).toHaveTextContent('Visit & assessment');expect(screen.getByLabelText('Temperature °C')).not.toBeRequired()});
+ it('renders the historical daily log and opens a visit',async()=>{renderPage('/clinic/visits');expect(await screen.findByText('Minor cut')).toBeInTheDocument();expect(screen.getByText('Nurse Joy')).toBeInTheDocument();fireEvent.click(screen.getByRole('button',{name:'Open'}));expect(await screen.findByText('Ana Santos')).toBeInTheDocument()});
+});

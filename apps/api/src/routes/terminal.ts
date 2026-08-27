@@ -1,0 +1,24 @@
+import { Router } from 'express';
+import { z } from 'zod';
+import { rateLimit } from '../middleware/security-hardening.js';
+import { requirePermission } from '../security/middleware.js';
+import { requireTerminalDevice } from '../terminal/device-auth.js';
+import { terminalRepository } from '../terminal/repository.js';
+
+export const terminalRouter = Router();
+const uuid=z.string().uuid(), method=z.enum(['qr','rfid','nfc','barcode']);
+const details=z.object({name:z.string().trim().min(2).max(120),location:z.string().trim().max(200).nullable(),campusId:uuid.nullable(),description:z.string().trim().max(500).nullable()});
+const capture=z.object({captureId:uuid,credentialValue:z.string().trim().min(1).max(500),captureMethod:method,capturedAt:z.iso.datetime({offset:true})}).strict();
+const provisionLimit=rateLimit({name:'attendance-terminal-provision',maximum:10,windowMs:15*60_000,key:r=>`${r.ip}:${String(r.body?.deviceIdentifier??'')}`});
+
+terminalRouter.get('/attendance-terminals/admin',requirePermission('attendance.terminal.manage'),async(_r,s,n)=>{try{s.json(await terminalRepository.adminContext())}catch(e){n(e)}});
+terminalRouter.post('/attendance-terminals',requirePermission('attendance.terminal.manage'),async(r,s,n)=>{try{const d=details.extend({code:z.string().trim().min(2).max(60)}).strict().parse(r.body);s.status(201).json({item:await terminalRepository.register(d,r.auth.userId!,String(r.id))})}catch(e){n(e)}});
+terminalRouter.patch('/attendance-terminals/:id',requirePermission('attendance.terminal.manage'),async(r,s,n)=>{try{const d=details.extend({version:z.number().int().positive()}).strict().parse(r.body);s.json({item:await terminalRepository.update(uuid.parse(r.params.id),d,r.auth.userId!,String(r.id))})}catch(e){n(e)}});
+terminalRouter.post('/attendance-terminals/:id/status',requirePermission('attendance.terminal.manage'),async(r,s,n)=>{try{const d=z.object({status:z.enum(['active','inactive','revoked'])}).strict().parse(r.body);s.json({item:await terminalRepository.setStatus(uuid.parse(r.params.id),d.status,r.auth.userId!,String(r.id))})}catch(e){n(e)}});
+terminalRouter.post('/attendance-terminals/:id/provisioning-tokens',requirePermission('attendance.terminal.device.manage'),async(r,s,n)=>{try{s.status(201).json({item:await terminalRepository.createProvisioningToken(uuid.parse(r.params.id),r.auth.userId!,String(r.id))})}catch(e){n(e)}});
+terminalRouter.post('/attendance-terminals/devices/:id/revoke',requirePermission('attendance.terminal.device.manage'),async(r,s,n)=>{try{const d=z.object({reason:z.string().trim().min(3).max(500)}).strict().parse(r.body);await terminalRepository.revokeDevice(uuid.parse(r.params.id),d.reason,r.auth.userId!,String(r.id));s.status(204).end()}catch(e){n(e)}});
+
+terminalRouter.post('/attendance-terminals/provision',provisionLimit,async(r,s,n)=>{try{const d=z.object({provisioningCode:z.string().trim().min(8).max(32),deviceIdentifier:uuid,applicationVersion:z.string().trim().min(1).max(40)}).strict().parse(r.body);s.status(201).json({item:await terminalRepository.provision(d,String(r.id))})}catch(e){n(e)}});
+terminalRouter.get('/attendance-terminals/runtime/bootstrap',requireTerminalDevice,async(r,s,n)=>{try{s.json({item:await terminalRepository.bootstrap(r.auth.deviceId!)})}catch(e){n(e)}});
+terminalRouter.post('/attendance-terminals/runtime/heartbeat',requireTerminalDevice,async(r,s,n)=>{try{const d=z.object({pendingCount:z.number().int().min(0),failedCount:z.number().int().min(0),syncState:z.enum(['online','offline','reconnecting','syncing','failed']),applicationVersion:z.string().trim().min(1).max(40)}).strict().parse(r.body);await terminalRepository.heartbeat(r.auth.deviceId!,d);s.status(204).end()}catch(e){n(e)}});
+terminalRouter.post('/attendance-terminals/runtime/sync',requireTerminalDevice,async(r,s,n)=>{try{const d=z.object({captures:z.array(z.unknown()).min(1).max(100)}).strict().parse(r.body),valid: z.infer<typeof capture>[]=[],rejected:Array<{captureId:string;outcome:'rejected';message:string}>=[];for(const raw of d.captures){const parsed=capture.safeParse(raw);if(parsed.success)valid.push(parsed.data);else rejected.push({captureId:typeof raw==='object'&&raw!==null&&'captureId'in raw&&typeof raw.captureId==='string'?raw.captureId:'invalid',outcome:'rejected',message:'Capture payload is malformed'})}const events=valid.map(x=>({clientEventId:x.captureId,credentialValue:x.credentialValue,captureMethod:x.captureMethod,scanSource:x.captureMethod==='rfid'?'rfid' as const:'qr_scanner' as const,capturedAt:x.capturedAt}));const result=events.length?await terminalRepository.sync(r.auth.terminalId!,r.auth.deviceId!,events,r.auth.userId!,String(r.id)):{results:[]};s.json({results:[...result.results.map(item=>({...item,captureId:item.clientEventId})),...rejected]})}catch(e){n(e)}});

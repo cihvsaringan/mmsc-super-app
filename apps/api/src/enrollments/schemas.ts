@@ -1,0 +1,10 @@
+import { z } from 'zod';
+const uuid=z.string().uuid();const optionalText=(max:number)=>z.string().trim().max(max).nullable().optional();
+export const enrollmentStatus=z.enum(['pending','enrolled','completed','promoted','retained','transferred','withdrawn','cancelled']);
+const placement={gradeLevelId:uuid,sectionId:uuid.nullable().optional(),status:enrollmentStatus,enrollmentDate:z.iso.date(),completionDate:z.iso.date().nullable().optional(),completionStatus:z.enum(['completed','promoted','retained']).nullable().optional(),promotedToGradeLevelId:uuid.nullable().optional(),transferWithdrawalDate:z.iso.date().nullable().optional(),destinationSchool:optionalText(300),exitReason:optionalText(1000),remarks:optionalText(3000)};
+type CompletionValues={completionStatus?:string|null|undefined;completionDate?:string|null|undefined;promotedToGradeLevelId?:string|null|undefined};
+const validateCompletion=(value:CompletionValues,ctx:z.RefinementCtx)=>{if(value.completionStatus&&!value.completionDate)ctx.addIssue({code:'custom',path:['completionDate'],message:'Completion date is required when completion information is recorded'});if(value.promotedToGradeLevelId&&value.completionStatus!=='promoted')ctx.addIssue({code:'custom',path:['promotedToGradeLevelId'],message:'Promotion grade is only valid for promoted enrollments'});};
+export const enrollmentCreateSchema=z.object({studentId:uuid,schoolYearId:uuid,...placement}).strict().superRefine(validateCompletion);
+export const enrollmentUpdateSchema=z.object(placement).strict().superRefine(validateCompletion);
+export const enrollmentCompletionSchema=z.object({sectionId:uuid,enrollmentDate:z.iso.date(),remarks:optionalText(3000)}).strict();
+export const enrollmentFields={studentId:'student_id',schoolYearId:'school_year_id',gradeLevelId:'grade_level_id',sectionId:'section_id',status:'status',enrollmentDate:'enrollment_date',completionDate:'completion_date',completionStatus:'completion_status',promotedToGradeLevelId:'promoted_to_grade_level_id',transferWithdrawalDate:'transfer_withdrawal_date',destinationSchool:'destination_school',exitReason:'exit_reason',remarks:'remarks'} as const;

@@ -1,0 +1,8 @@
+import{cleanup,render,screen,waitFor}from'@testing-library/react';
+import{afterEach,describe,expect,it,vi}from'vitest';
+const state=vi.hoisted(()=>({permissions:['library.catalog.view','library.copies.view']as string[]}));
+vi.mock('../auth/AuthContext',()=>({useAuth:()=>({has:(permission:string)=>state.permissions.includes(permission)})}));
+vi.mock('../lib/api',()=>({api:vi.fn(async(path:string)=>path==='/library/catalog/context'?{categories:[{id:'cat-1',kind:'category',code:'FIL',name:'Filipiniana'}],subjects:[],shelves:[]}:path.startsWith('/library/books?')?{items:[{id:'book-1',title:'Noli Me Tangere',subtitle:null,isbn:null,author:'Jose Rizal',category:'Filipiniana',version:1,totalCopies:3,available:2,checkedOut:1}],total:1}:{book:{},copies:[],summary:{}}),apiErrorMessage:()=>''}));
+import{LibraryCatalog}from'./LibraryCatalog';
+
+describe('Library catalog workspace',()=>{afterEach(()=>cleanup());it('renders server-returned catalog rows and hides mutations for a view-only user',async()=>{state.permissions=['library.catalog.view','library.copies.view'];render(<LibraryCatalog/>);expect(await screen.findByText('Noli Me Tangere')).toBeInTheDocument();expect(screen.getByText('Jose Rizal')).toBeInTheDocument();expect(screen.getByText('1–1 of 1')).toBeInTheDocument();expect(screen.queryByRole('button',{name:/add book/i})).not.toBeInTheDocument()});it('shows catalog actions to a manager',async()=>{state.permissions=['library.catalog.view','library.copies.view','library.catalog.manage','library.copies.manage'];render(<LibraryCatalog/>);await waitFor(()=>expect(screen.getByRole('button',{name:/add book/i})).toBeInTheDocument());expect(screen.getByRole('button',{name:/classifications/i})).toBeInTheDocument()})});

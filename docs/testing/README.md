@@ -1,0 +1,5 @@
+# Testing Strategy
+
+The Attendance credential/offline PWA extension adds centralized Student/Employee RFID/QR route tests, terminal scan-source normalization, IndexedDB queue regressions, fast/slow/consecutive HID parsing, interruptible three-second result timing, and terminal-only offline operator bootstrap coverage. Its managed-device acceptance procedure is in `docs/phases/PHASE-29-EXT-ATTENDANCE-CREDENTIAL-OFFLINE-PWA-ENHANCEMENT.md`; production approval still requires the actual USB readers, camera browser, installed-PWA restart, API disconnect/reconnect, and authoritative database inspection.
+
+Vitest covers API response contracts with Supertest, scrypt/session primitives, permission middleware allow/deny behavior, authentication success/failure contracts, secure cookie properties, and frontend permission-aware navigation with Testing Library. The phase gate also runs strict TypeScript checks, ESLint, migration file validation, and both production builds. Database-backed integration tests require an isolated PostgreSQL test service; Docker validation depends on Docker availability.

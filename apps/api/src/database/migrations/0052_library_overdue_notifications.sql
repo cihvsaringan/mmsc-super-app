@@ -1,0 +1,3 @@
+CREATE TABLE library_notification_dispatches(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),loan_id uuid NOT NULL REFERENCES library_loans(id),trigger_key varchar(40) NOT NULL CHECK(trigger_key IN('due_3_days','due_1_day','due_today','overdue_3_days','overdue_7_days')),notification_id uuid NOT NULL REFERENCES notifications(id),created_at timestamptz NOT NULL DEFAULT now(),UNIQUE(loan_id,trigger_key));
+CREATE INDEX library_notification_dispatches_loan ON library_notification_dispatches(loan_id,created_at DESC);
+CREATE INDEX library_loans_active_due_notification ON library_loans(due_at,patron_type,student_id) WHERE returned_at IS NULL;

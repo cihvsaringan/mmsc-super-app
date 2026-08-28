@@ -64,6 +64,16 @@ The host `tsx` migration check was attempted and hit the existing Windows Node `
 
 Phase 29 is complete. The next planned phases are the deferred post-MVP Phases 19–23, but none has been started.
 
+## Approved Admission completion status-contract correction — 2026-08-28
+
+The Enrollment queue intentionally presents approved Admission handoffs as synthetic `pending` candidates, while candidate detail preserves the truthful Admission status `approved`. The modal previously checked only `status === 'pending'`, so replacing the queue item with detail hid **Review & Confirm** from otherwise authorized Registrars.
+
+Completion eligibility is now centralized by candidate source: an Admission is completable only from canonical `approved`, and a persisted Enrollment only from canonical `pending`, with `enrollment.manage` still required. Readiness messaging also distinguishes view-only access, missing curriculum, no eligible Sections, and non-completable lifecycle states without changing the workflow or backend validation.
+
+The existing completion endpoint and transaction remain authoritative. Its backwards-compatible Enrollment-domain result now returns the persisted Student, Student Number, Enrollment, Admission when applicable, School Year, Grade, Section, source candidate, and Enrollment status identifiers. The existing `enrollment.complete` audit event carries the same non-sensitive references for traceability. No billing behavior, financial data, event broker, outbox, or Finance dependency was introduced; a future Finance application can react only after successful academic Enrollment persistence.
+
+Phase 29 is complete. The next planned phases are the deferred post-MVP Phases 19–23, but none has been started.
+
 ## Manual-test confirmation contract correction — 2026-08-23
 
 Manual confirmation of a previously materialized pending Enrollment exposed a response-contract defect. The queue response included `candidateKind: "enrollment"`, but the Enrollment detail selector did not project `candidate_kind`. Opening the modal replaced the complete queue object with this incomplete detail object, so the frontend constructed:

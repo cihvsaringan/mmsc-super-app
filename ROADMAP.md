@@ -1,5 +1,7 @@
 # MMSC Super App Roadmap
 
+> 2026-08-28 Registration & Admissions minor enhancement: source now includes School-Year-specific public registration activation, server-enforced closure, authoritative school-contact closed state, optional intake documents, protected staff document operations, and Under Review editing. Migration and authenticated manual acceptance remain pending. No new roadmap phase was started.
+
 > 2026-08-28 Phase 21 manual-testing extension: centralized Computer Laboratory application display and final role mappings are corrected, Workstations no longer fails on partial schema state, and migrations 0055–0061 were applied to the positively identified local Docker development database. Authenticated browser acceptance remains pending.
 
 > 2026-08-28 Phase 21 source-completion note: Group 7 adds the operational Dashboard, alerts, ten bounded reports, CSV export, final navigation, and Equipment UI follow-ups. Groups 1–7 are complete in source. Migrations 0055–0060 and authenticated acceptance remain pending explicit authorization; Phase 21 is not yet production-accepted.

@@ -1,5 +1,18 @@
 # Changelog
 
+- Corrected approved-Admission Enrollment review eligibility, added truthful readiness states, and enriched the atomic Enrollment completion result/audit references for future non-blocking integrations without implementing Finance or Billing.
+
+## 2026-08-28 — Registration & Admissions minor enhancement
+
+- Added a single enabled School-Year registration period with audited activation and backend enforcement.
+- Added the public registration-closed state using authoritative School contact data.
+- Extended optional Admission documents and protected staff operations without duplicating storage.
+- Added permission-protected Under Review application editing while preserving Enrollment handoff semantics.
+- Applied migration `0062` to the configured local database, resolving public and administrative bootstrap failures caused by the missing `registration_periods` table.
+- Added the omitted optional staff-assisted document picker and create-then-upload workflow using the shared Admission document domain.
+- Added grouped multi-file selection for public, staff-assisted, and Under Review Admission documents while preserving each file's document-type tag.
+- Added secure per-document download actions in Admissions using the existing application-scoped, permission-protected storage endpoint.
+
 ## 2026-08-27 — Phase 20 manual testing extension 2
 
 - Corrected centralized credential resolution to prefer a current active, unexpired row when the same digest also has revoked/replaced lifecycle history; this is the real application-created RFID case that seed-only verification missed.

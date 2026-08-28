@@ -14,12 +14,12 @@ const base={applicationType:'new_student' as const,schoolId:'school',schoolYearI
 const application={id:'application',application_number:'MMREG-2026-100001',status:'draft',application_type:'new_student',existing_student_id:null,first_name:'Ana',last_name:'Reyes',school_year_id:'year',grade_level_id:'grade',version:1};
 
 describe('public Admissions transactions',()=>{
-  beforeEach(()=>{vi.clearAllMocks();});
+  beforeEach(()=>{vi.resetAllMocks();mocks.connect.mockResolvedValue(mocks.client);});
 
   it('creates a new-applicant draft with one primary guardian column and initial history',async()=>{
-    mocks.client.query.mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[{id:'year'}]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[application]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]});
+    mocks.client.query.mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[{}]}).mockResolvedValueOnce({rows:[{id:'year'}]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[application]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]});
     const result=await new PublicAdmissionsService().create({...base},{requestId:'request'});
-    const guardianSql=String(mocks.client.query.mock.calls[4]?.[0]);
+    const guardianSql=String(mocks.client.query.mock.calls[5]?.[0]);
     expect(guardianSql.match(/is_primary/g)).toHaveLength(1);
     expect(result.application).toMatchObject({applicationNumber:'MMREG-2026-100001'});
     expect(mocks.client.query).toHaveBeenCalledWith(expect.stringContaining('Public registration draft created'),['application']);
@@ -27,13 +27,15 @@ describe('public Admissions transactions',()=>{
   });
 
   it('rolls back when a child record cannot be created',async()=>{
-    mocks.client.query.mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[{id:'year'}]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[application]}).mockRejectedValueOnce(new Error('guardian failed')).mockResolvedValueOnce({rows:[]});
+    mocks.client.query.mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[{}]}).mockResolvedValueOnce({rows:[{id:'year'}]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[application]}).mockRejectedValueOnce(new Error('guardian failed')).mockResolvedValueOnce({rows:[]});
     await expect(new PublicAdmissionsService().create({...base},{requestId:'request'})).rejects.toThrow('guardian failed');
     expect(mocks.client.query).toHaveBeenLastCalledWith('ROLLBACK');
   });
 
+  it('rejects direct draft creation while registration is closed',async()=>{mocks.client.query.mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[]});await expect(new PublicAdmissionsService().create({...base},{requestId:'request'})).rejects.toMatchObject({code:'REGISTRATION_CLOSED',status:409});expect(mocks.client.query).toHaveBeenLastCalledWith('ROLLBACK');});
+
   it('rejects a duplicate active returning registration before inserting',async()=>{
-    mocks.client.query.mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[{id:'year'}]}).mockResolvedValueOnce({rows:[{id:'student',first_name:'Bayani',last_name:'Castillo',birth_date:'2012-02-12'}]}).mockResolvedValueOnce({rows:[{application_number:'existing'}]}).mockResolvedValueOnce({rows:[]});
+    mocks.client.query.mockResolvedValueOnce({rows:[]}).mockResolvedValueOnce({rows:[{}]}).mockResolvedValueOnce({rows:[{id:'year'}]}).mockResolvedValueOnce({rows:[{id:'student',first_name:'Bayani',last_name:'Castillo',birth_date:'2012-02-12'}]}).mockResolvedValueOnce({rows:[{application_number:'existing'}]}).mockResolvedValueOnce({rows:[]});
     const promise=new PublicAdmissionsService().create({...base,applicationType:'returning_student',studentNumber:'MMSC-2026-0002',birthDate:'2012-02-12'},{requestId:'request'});
     await expect(promise).rejects.toMatchObject({code:'DUPLICATE_ACTIVE_APPLICATION',status:409});
     expect(mocks.client.query).toHaveBeenLastCalledWith('ROLLBACK');

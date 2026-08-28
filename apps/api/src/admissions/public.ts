@@ -16,13 +16,13 @@ type RequestContext = { requestId:string;ip?:string|undefined };
 export class PublicAdmissionsService {
   async context() {
     const [schools,years,grades,sections,externalSchools]=await Promise.all([
-      pool.query(`SELECT id,name FROM schools WHERE archived_at IS NULL AND active AND is_primary ORDER BY name`),
-      pool.query(`SELECT id,name,school_id FROM school_years WHERE archived_at IS NULL AND status IN('planned','active') ORDER BY starts_on DESC`),
+      pool.query(`SELECT id,name,email,phone,address_line,city,province FROM schools WHERE archived_at IS NULL AND active AND is_primary ORDER BY name`),
+      pool.query(`SELECT sy.id,sy.name,sy.school_id FROM school_years sy JOIN registration_periods rp ON rp.school_year_id=sy.id AND rp.is_enabled WHERE sy.archived_at IS NULL AND sy.status IN('planned','active') ORDER BY sy.starts_on DESC`),
       pool.query(`SELECT id,name,school_id FROM grade_levels WHERE archived_at IS NULL AND active ORDER BY sequence,name,id`),
       pool.query(`SELECT id,name,school_year_id,grade_level_id FROM sections WHERE archived_at IS NULL AND active ORDER BY name`),
       pool.query(`SELECT id,name FROM external_schools WHERE archived_at IS NULL AND active ORDER BY lower(name)`),
     ]);
-    return { schools:schools.rows.map(map),schoolYears:years.rows.map(map),gradeLevels:grades.rows.map(map),sections:sections.rows.map(map),externalSchools:externalSchools.rows.map(map),privacyNotice:{version:'2026-08',summary:'MMSC collects this information to evaluate admission and, only after approval, establish school records. Access is limited to authorized school personnel.'} };
+    const school=schools.rows[0];return { registrationEnabled:years.rows.length===1,schools:schools.rows.map(row=>({id:row.id,name:row.name})).map(map),schoolYears:years.rows.map(map),gradeLevels:grades.rows.map(map),sections:sections.rows.map(map),externalSchools:externalSchools.rows.map(map),schoolContact:school?map(school):null,privacyNotice:{version:'2026-08',summary:'MMSC collects this information to evaluate admission and, only after approval, establish school records. Access is limited to authorized school personnel.'} };
   }
 
   private async validatePlacement(client:PoolClient,data:PublicData) {
@@ -35,7 +35,7 @@ export class PublicAdmissionsService {
   async create(data:PublicData,context:RequestContext) {
     const client=await pool.connect();const token=randomBytes(32).toString('base64url');
     try {
-      await client.query('BEGIN');await this.validatePlacement(client,data);let existingStudentId:string|null=null;
+      await client.query('BEGIN');const enabled=await client.query(`SELECT 1 FROM registration_periods WHERE school_year_id=$1 AND is_enabled FOR SHARE`,[data.schoolYearId]);if(!enabled.rows[0])throw new AppError(409,'REGISTRATION_CLOSED','Registration is currently closed.');await this.validatePlacement(client,data);let existingStudentId:string|null=null;
       if(data.applicationType==='returning_student'){
         const match=await client.query(`SELECT id,first_name,middle_name,last_name,suffix,preferred_name,birth_date,gender,learner_reference_number FROM students
           WHERE school_id=$1 AND archived_at IS NULL AND lower(student_number)=lower($2) AND birth_date=$3 AND($4::varchar IS NULL OR learner_reference_number=$4) FOR SHARE`,[data.schoolId,data.studentNumber,data.birthDate,data.learnerReferenceNumber??null]);

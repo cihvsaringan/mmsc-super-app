@@ -1,5 +1,9 @@
 # Database
 
+## Registration availability and Admission document lifecycle
+
+Migration `0062_registration_admissions_minor_enhancement.sql` adds `registration_periods`, keyed to `school_years`, with a partial unique index allowing only one enabled public period. Admission documents retain their existing application ownership and managed-storage key; `removed_at` and `removed_by` provide audited soft removal without deleting historical Admission records.
+
 ## Migration 0053 — Library reporting indexes
 
 Migration 0053 adds partial returned-loan and completed-visit indexes plus a copy-status reporting index. These complement the existing normalized unique accession/barcode, partial active-loan, active due-loan, open-visitor, visitor analytics, and notification-dispatch uniqueness indexes. Reports remain derived and do not add summary tables, mutable overdue state, fines, or payments.

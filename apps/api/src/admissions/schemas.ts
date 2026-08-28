@@ -20,3 +20,8 @@ export const admissionCreateSchema = z.object({
 export const admissionTransitionSchema = z.object({
   version: z.number().int().positive(), status: z.enum(['submitted','under_review','information_requested','approved','rejected','withdrawn']), reason: z.string().trim().max(5000).nullable().optional(), registrarNotes: z.string().trim().max(5000).nullable().optional(),
 }).strict();
+
+export const admissionUpdateSchema = admissionCreateSchema.omit({ schoolId:true, applicationType:true, existingStudentId:true }).extend({
+  version:z.number().int().positive(),
+  guardian:guardianSchema.extend({ id:uuid }),
+}).strict();

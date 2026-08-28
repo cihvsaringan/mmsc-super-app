@@ -1,5 +1,9 @@
 # Security
 
+## Registration activation and Admission files
+
+Public draft creation requires an enabled registration period for the submitted authoritative School Year and returns the expected `REGISTRATION_CLOSED` business error otherwise. Public status access remains token-bound. Staff activation and intake use existing Admissions permissions; Under Review edits and document mutations require `admission.review`, while protected document reads require `admission.view`. Files remain MIME/signature/size validated, randomly keyed, path-confined, and unavailable through permanent public URLs.
+
 ## Phase 20 manual credential hardening
 
 Visitor scan values are normalized and digested server-side through the shared Credential resolver, never returned, stored in Library, or written to audit metadata. Only active, unexpired RFID/barcode records proceed. Revoked, inactive, lost, replaced, suspended, or expired records are rejected before identity use. `library.visitors.log` remains mandatory, and Student/Employee eligibility is checked after resolution. Library audit actions use the lowercase dotted format enforced by the immutable audit table.
